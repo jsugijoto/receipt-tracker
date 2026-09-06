@@ -1,0 +1,16 @@
+{
+  "name": "ReceiptTracker",
+  "short_name": "Receipts",
+  "description": "Snap & track personal receipts with AI OCR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
