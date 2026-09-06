@@ -238,6 +238,10 @@ export default function DashboardPage() {
         receipt={activeReceipt}
         onClose={() => setActiveReceipt(null)}
         onDeleted={handleReceiptDeleted}
+        onUpdated={(updated) => {
+          setReceipts((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+          setActiveReceipt(updated);
+        }}
       />
     </div>
   );
