@@ -129,6 +129,68 @@ export default function UploadPage() {
     }
   };
 
+  // Helper to update item fields and auto-recalculate totals
+  const updateItemField = (
+    index: number,
+    field: 'item_description' | 'quantity' | 'total_price',
+    value: string
+  ) => {
+    if (!parsedData) return;
+    const newItems = [...parsedData.items];
+    const item = { ...newItems[index] };
+
+    if (field === 'quantity') {
+      const qty = parseFloat(value) || 1;
+      const unit = item.unit_price || (item.total_price && item.quantity ? item.total_price / item.quantity : 0);
+      item.quantity = qty;
+      if (unit > 0) {
+        item.unit_price = unit;
+        item.total_price = Number((qty * unit).toFixed(2));
+      }
+    } else if (field === 'total_price') {
+      const total = parseFloat(value) || 0;
+      item.total_price = total;
+      if (item.quantity > 0) {
+        item.unit_price = Number((total / item.quantity).toFixed(2));
+      }
+    } else {
+      item.item_description = value;
+    }
+
+    newItems[index] = item;
+
+    // Recalculate receipt total (sum of items + tax)
+    const newItemsSum = newItems.reduce((acc, it) => acc + (Number(it.total_price) || 0), 0);
+    const tax = Number(parsedData.tax_amount) || 0;
+
+    setParsedData({
+      ...parsedData,
+      items: newItems,
+      total_amount: Number((newItemsSum + tax).toFixed(2)),
+    });
+  };
+
+  const addItem = () => {
+    if (!parsedData) return;
+    const newItems = [
+      ...parsedData.items,
+      { item_description: 'New Item', quantity: 1, total_price: 0 },
+    ];
+    setParsedData({ ...parsedData, items: newItems });
+  };
+
+  const removeItem = (index: number) => {
+    if (!parsedData) return;
+    const newItems = parsedData.items.filter((_, i) => i !== index);
+    const newItemsSum = newItems.reduce((acc, it) => acc + (Number(it.total_price) || 0), 0);
+    const tax = Number(parsedData.tax_amount) || 0;
+    setParsedData({
+      ...parsedData,
+      items: newItems,
+      total_amount: Number((newItemsSum + tax).toFixed(2)),
+    });
+  };
+
   // Save parsed receipt and line items to Supabase
   const handleSaveReceipt = async () => {
     if (!parsedData || !selectedFile) return;
@@ -424,6 +486,31 @@ export default function UploadPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                  Tax Amount ($)
+                </label>
+                <div className="relative">
+                  <DollarSign className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={parsedData.tax_amount ?? ''}
+                    onChange={(e) => {
+                      const newTax = parseFloat(e.target.value) || 0;
+                      const itemsSubtotal = parsedData.items.reduce((acc, it) => acc + (Number(it.total_price) || 0), 0);
+                      setParsedData({
+                        ...parsedData,
+                        tax_amount: newTax,
+                        total_amount: Number((itemsSubtotal + newTax).toFixed(2)),
+                      });
+                    }}
+                    placeholder="0.00"
+                    className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">
                   Category
                 </label>
                 <div className="relative">
@@ -458,16 +545,8 @@ export default function UploadPage() {
               </h3>
               <button
                 type="button"
-                onClick={() =>
-                  setParsedData({
-                    ...parsedData,
-                    items: [
-                      ...parsedData.items,
-                      { item_description: 'New Item', quantity: 1, total_price: 0 },
-                    ],
-                  })
-                }
-                className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700"
+                onClick={addItem}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200 transition"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Item
@@ -483,11 +562,7 @@ export default function UploadPage() {
                   <input
                     type="text"
                     value={item.item_description}
-                    onChange={(e) => {
-                      const newItems = [...parsedData.items];
-                      newItems[index].item_description = e.target.value;
-                      setParsedData({ ...parsedData, items: newItems });
-                    }}
+                    onChange={(e) => updateItemField(index, 'item_description', e.target.value)}
                     placeholder="Description"
                     className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm font-medium focus:outline-none"
                   />
@@ -497,12 +572,9 @@ export default function UploadPage() {
                     <input
                       type="number"
                       step="1"
+                      min="1"
                       value={item.quantity}
-                      onChange={(e) => {
-                        const newItems = [...parsedData.items];
-                        newItems[index].quantity = parseFloat(e.target.value) || 1;
-                        setParsedData({ ...parsedData, items: newItems });
-                      }}
+                      onChange={(e) => updateItemField(index, 'quantity', e.target.value)}
                       className="w-12 px-1.5 py-1 text-xs text-center bg-white border border-slate-200 rounded-lg focus:outline-none"
                     />
                   </div>
@@ -513,27 +585,57 @@ export default function UploadPage() {
                       type="number"
                       step="0.01"
                       value={item.total_price}
-                      onChange={(e) => {
-                        const newItems = [...parsedData.items];
-                        newItems[index].total_price = parseFloat(e.target.value) || 0;
-                        setParsedData({ ...parsedData, items: newItems });
-                      }}
+                      onChange={(e) => updateItemField(index, 'total_price', e.target.value)}
                       className="w-20 px-1.5 py-1 text-xs text-right font-semibold bg-white border border-slate-200 rounded-lg focus:outline-none"
                     />
                   </div>
 
                   <button
                     type="button"
-                    onClick={() => {
-                      const newItems = parsedData.items.filter((_, i) => i !== index);
-                      setParsedData({ ...parsedData, items: newItems });
-                    }}
+                    onClick={() => removeItem(index)}
                     className="p-1 text-slate-400 hover:text-rose-600 rounded transition"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               ))}
+            </div>
+
+            {/* Live Subtotal & Sync Total Row */}
+            <div className="pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs sm:text-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-slate-600">
+                  Items Subtotal:
+                </span>
+                <span className="font-bold text-slate-900 text-base">
+                  ${parsedData.items.reduce((acc, it) => acc + (Number(it.total_price) || 0), 0).toFixed(2)}
+                </span>
+                {parsedData.tax_amount ? (
+                  <span className="text-xs text-slate-400">
+                    (+ ${Number(parsedData.tax_amount).toFixed(2)} tax)
+                  </span>
+                ) : null}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const subtotal = parsedData.items.reduce((acc, it) => acc + (Number(it.total_price) || 0), 0);
+                  const tax = Number(parsedData.tax_amount) || 0;
+                  setParsedData({
+                    ...parsedData,
+                    total_amount: Number((subtotal + tax).toFixed(2)),
+                  });
+                }}
+                className="text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1 rounded-lg border border-emerald-200 transition"
+              >
+                Sync Total to Items ($
+                {(
+                  parsedData.items.reduce((acc, it) => acc + (Number(it.total_price) || 0), 0) +
+                  (Number(parsedData.tax_amount) || 0)
+                ).toFixed(2)}
+                )
+              </button>
             </div>
           </div>
 
