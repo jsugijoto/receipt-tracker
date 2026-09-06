@@ -28,15 +28,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Image data is required.' }, { status: 400 });
     }
 
-    // Strip data URL prefix if present (e.g. "data:image/jpeg;base64,")
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+    // Strip data URL prefix if present (supports image/* and application/pdf)
+    const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
 
     // 3. Initialize Gemini Client
     const ai = new GoogleGenAI({ apiKey });
 
     // 4. Request Structured Extraction from Gemini Flash
     const prompt = `You are a precise receipt and invoice parsing assistant.
-Analyze this receipt image and extract:
+Analyze this receipt or invoice document (image or PDF) and extract:
 1. The vendor/merchant name (clean and normalized, e.g. "Target", "Costco", "Shell").
 2. The transaction date in strictly YYYY-MM-DD format. If year is ambiguous or missing, assume recent current year (2026).
 3. The total amount paid as a positive floating number.

@@ -19,6 +19,7 @@ import {
   Building,
   DollarSign,
   Tag,
+  FileText,
 } from 'lucide-react';
 
 export default function UploadPage() {
@@ -49,38 +50,48 @@ export default function UploadPage() {
     setParsedData(null);
     setOriginalSize(file.size);
 
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
     try {
-      setProcessingStage('Compressing image for fast upload...');
+      if (isPdf) {
+        setProcessingStage('Reading PDF receipt with Gemini Flash AI...');
+        setSelectedFile(file);
+        setCompressedSize(file.size);
+        setImagePreviewUrl(null);
+        await processFileWithOCR(file, 'application/pdf');
+      } else {
+        setProcessingStage('Compressing image for fast upload...');
 
-      // Auto-compress image in browser (reduces 4-8 MB camera photo down to ~150-250 KB)
-      const options = {
-        maxSizeMB: 0.35, // Target max size 350 KB
-        maxWidthOrHeight: 1600, // Perfect crisp resolution for Gemini OCR
-        useWebWorker: true,
-        fileType: 'image/jpeg',
-      };
+        // Auto-compress image in browser (reduces 4-8 MB camera photo down to ~150-250 KB)
+        const options = {
+          maxSizeMB: 0.35, // Target max size 350 KB
+          maxWidthOrHeight: 1600, // Perfect crisp resolution for Gemini OCR
+          useWebWorker: true,
+          fileType: 'image/jpeg',
+        };
 
-      const compressed = await imageCompression(file, options);
-      setCompressedSize(compressed.size);
-      setSelectedFile(compressed);
+        const compressed = await imageCompression(file, options);
+        setCompressedSize(compressed.size);
+        setSelectedFile(compressed);
 
-      // Create preview
-      const previewUrl = URL.createObjectURL(compressed);
-      setImagePreviewUrl(previewUrl);
+        // Create preview
+        const previewUrl = URL.createObjectURL(compressed);
+        setImagePreviewUrl(previewUrl);
 
-      // Trigger OCR automatically
-      await processImageWithOCR(compressed);
+        // Trigger OCR automatically
+        await processFileWithOCR(compressed, compressed.type || 'image/jpeg');
+      }
     } catch (err: any) {
       console.error(err);
-      setErrorMessage('Failed to process image: ' + err.message);
+      setErrorMessage('Failed to process file: ' + err.message);
       setProcessingStage(null);
     }
   };
 
-  // Run Gemini Flash OCR
-  const processImageWithOCR = async (file: File) => {
+  // Run Gemini Flash OCR (Images and PDFs)
+  const processFileWithOCR = async (file: File, mimeType: string) => {
     try {
-      setProcessingStage('Analyzing receipt with Gemini Flash AI...');
+      setProcessingStage('Analyzing document with Gemini Flash AI...');
 
       // Convert file to base64
       const base64Data = await new Promise<string>((resolve, reject) => {
@@ -96,7 +107,7 @@ export default function UploadPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64: base64Data,
-          mimeType: file.type || 'image/jpeg',
+          mimeType: mimeType || file.type || 'image/jpeg',
         }),
       });
 
@@ -131,12 +142,15 @@ export default function UploadPage() {
         return;
       }
 
-      // 1. Upload compressed image to Supabase Storage: receipts/{userId}/{timestamp}.jpg
-      const fileName = `${user.id}/${Date.now()}_receipt.jpg`;
+      const isPdf = selectedFile.type === 'application/pdf' || selectedFile.name.toLowerCase().endsWith('.pdf');
+      const fileExt = isPdf ? 'pdf' : 'jpg';
+
+      // 1. Upload compressed image or PDF to Supabase Storage: receipts/{userId}/{timestamp}_receipt.{ext}
+      const fileName = `${user.id}/${Date.now()}_receipt.${fileExt}`;
       const { error: uploadError } = await supabase.storage
         .from('receipts')
         .upload(fileName, selectedFile, {
-          contentType: selectedFile.type || 'image/jpeg',
+          contentType: isPdf ? 'application/pdf' : (selectedFile.type || 'image/jpeg'),
           upsert: false,
         });
 
@@ -215,7 +229,7 @@ export default function UploadPage() {
         id="receipt-file-input"
         type="file"
         onChange={handleFileChange}
-        accept="image/*"
+        accept="image/*,application/pdf,.pdf"
         className="sr-only"
       />
 
@@ -223,15 +237,15 @@ export default function UploadPage() {
       {!parsedData && !processingStage && (
         <div className="p-6 sm:p-12 bg-white rounded-3xl border-2 border-dashed border-slate-300 text-center shadow-sm">
           <label
-            htmlFor="receipt-camera-input"
+            htmlFor="receipt-file-input"
             className="cursor-pointer block group"
           >
             <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition shadow-inner">
               <Camera className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-bold text-slate-900">Take Photo or Upload Receipt</h3>
+            <h3 className="text-lg font-bold text-slate-900">Take Photo or Upload Receipt / PDF</h3>
             <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto">
-              Auto-compressed in browser. Gemini Flash extracts the items and total in ~1s.
+              Supports photos (JPEG, PNG) and PDF documents. Gemini Flash extracts the items and total in ~1s.
             </p>
           </label>
 
@@ -250,7 +264,7 @@ export default function UploadPage() {
               className="w-full sm:w-auto cursor-pointer inline-flex items-center justify-center gap-2 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold rounded-xl border border-slate-200 transition active:scale-95"
             >
               <Upload className="w-4 h-4" />
-              <span>Photo Library / Files</span>
+              <span>Photo Library / PDF</span>
             </label>
           </div>
         </div>
@@ -314,22 +328,31 @@ export default function UploadPage() {
             </button>
           </div>
 
-          {/* Receipt Image Thumbnail & Compression Stats */}
-          {imagePreviewUrl && (
+          {/* Receipt File Preview (Image or PDF) */}
+          {selectedFile && (
             <div className="p-4 bg-white rounded-2xl border border-slate-200 flex items-center gap-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={imagePreviewUrl}
-                alt="Receipt Preview"
-                className="w-16 h-20 object-cover rounded-lg border border-slate-200 shadow-sm"
-              />
-              <div className="text-xs text-slate-500 space-y-1">
-                <p className="font-medium text-slate-800">Receipt Photo Optimized</p>
+              {imagePreviewUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={imagePreviewUrl}
+                  alt="Receipt Preview"
+                  className="w-16 h-20 object-cover rounded-lg border border-slate-200 shadow-sm"
+                />
+              ) : (
+                <div className="w-16 h-20 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 shadow-sm flex-shrink-0">
+                  <FileText className="w-8 h-8" />
+                  <span className="text-[10px] font-bold mt-1">PDF</span>
+                </div>
+              )}
+              <div className="text-xs text-slate-500 space-y-1 min-w-0">
+                <p className="font-medium text-slate-800 truncate">
+                  {selectedFile.name || 'Receipt Document'}
+                </p>
                 {originalSize && compressedSize && (
                   <p>
-                    {(originalSize / 1024 / 1024).toFixed(1)} MB ➔{' '}
-                    {(compressedSize / 1024).toFixed(0)} KB (
-                    {Math.round((1 - compressedSize / originalSize) * 100)}% smaller)
+                    {selectedFile.type === 'application/pdf'
+                      ? `${(originalSize / 1024).toFixed(0)} KB PDF document`
+                      : `${(originalSize / 1024 / 1024).toFixed(1)} MB ➔ ${(compressedSize / 1024).toFixed(0)} KB (${Math.round((1 - compressedSize / originalSize) * 100)}% smaller)`}
                   </p>
                 )}
                 <p className="text-emerald-600 font-medium">Ready for cloud storage</p>

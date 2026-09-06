@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Receipt, ReceiptItem } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
-import { X, Calendar, DollarSign, Tag, Trash2, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { X, Calendar, DollarSign, Tag, Trash2, ExternalLink, Image as ImageIcon, FileText } from 'lucide-react';
 
 interface Props {
   receipt: Receipt | null;
@@ -178,20 +178,32 @@ export default function ReceiptDetailModal({ receipt, onClose, onDeleted }: Prop
             )}
           </div>
 
-          {/* Receipt Image Preview */}
+          {/* Receipt Image / PDF Preview */}
           {imageSignedUrl && (
             <div>
               <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-1.5">
-                <ImageIcon className="w-4 h-4 text-slate-500" />
-                Original Receipt Photo
+                {receipt.image_url?.toLowerCase().endsWith('.pdf') ? (
+                  <FileText className="w-4 h-4 text-slate-500" />
+                ) : (
+                  <ImageIcon className="w-4 h-4 text-slate-500" />
+                )}
+                Original Receipt {receipt.image_url?.toLowerCase().endsWith('.pdf') ? 'PDF Document' : 'Photo'}
               </h3>
-              <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-950/5 flex items-center justify-center max-h-72">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={imageSignedUrl}
-                  alt={receipt.vendor_name}
-                  className="max-h-72 w-auto object-contain rounded-lg"
-                />
+              <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-950/5 flex items-center justify-center max-h-80">
+                {receipt.image_url?.toLowerCase().endsWith('.pdf') ? (
+                  <iframe
+                    src={`${imageSignedUrl}#toolbar=0`}
+                    className="w-full h-72 border-none rounded-lg"
+                    title="PDF Receipt Preview"
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={imageSignedUrl}
+                    alt={receipt.vendor_name}
+                    className="max-h-72 w-auto object-contain rounded-lg"
+                  />
+                )}
               </div>
               <div className="mt-2 text-right">
                 <a
@@ -200,7 +212,7 @@ export default function ReceiptDetailModal({ receipt, onClose, onDeleted }: Prop
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
                 >
-                  Open full resolution <ExternalLink className="w-3 h-3" />
+                  Open {receipt.image_url?.toLowerCase().endsWith('.pdf') ? 'PDF' : 'full resolution'} in new tab <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
             </div>
