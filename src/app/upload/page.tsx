@@ -202,33 +202,56 @@ export default function UploadPage() {
         </p>
       </div>
 
-      {/* Hidden File Input with Camera Capture Support */}
+      {/* Native File Inputs (using sr-only so mobile Safari and Android can trigger them reliably) */}
       <input
+        id="receipt-camera-input"
         type="file"
-        ref={fileInputRef}
         onChange={handleFileChange}
         accept="image/*"
         capture="environment"
-        className="hidden"
+        className="sr-only"
+      />
+      <input
+        id="receipt-file-input"
+        type="file"
+        onChange={handleFileChange}
+        accept="image/*"
+        className="sr-only"
       />
 
       {/* Upload / Camera Box */}
       {!parsedData && !processingStage && (
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          className="p-8 sm:p-12 bg-white rounded-3xl border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/20 transition cursor-pointer text-center group shadow-sm"
-        >
-          <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition shadow-inner">
-            <Camera className="w-8 h-8" />
-          </div>
-          <h3 className="text-lg font-bold text-slate-900">Take Photo or Upload</h3>
-          <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto">
-            Supports JPEG, PNG, or mobile camera capture. Photos are automatically compressed client-side.
-          </p>
+        <div className="p-6 sm:p-12 bg-white rounded-3xl border-2 border-dashed border-slate-300 text-center shadow-sm">
+          <label
+            htmlFor="receipt-camera-input"
+            className="cursor-pointer block group"
+          >
+            <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition shadow-inner">
+              <Camera className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900">Take Photo or Upload Receipt</h3>
+            <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto">
+              Auto-compressed in browser. Gemini Flash extracts the items and total in ~1s.
+            </p>
+          </label>
 
-          <div className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 group-hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl shadow-md transition">
-            <Upload className="w-4 h-4" />
-            <span>Select or Snap Receipt</span>
+          {/* Dual Action Buttons for Mobile */}
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <label
+              htmlFor="receipt-camera-input"
+              className="w-full sm:w-auto cursor-pointer inline-flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl shadow-md transition active:scale-95"
+            >
+              <Camera className="w-4 h-4" />
+              <span>Take Photo (Camera)</span>
+            </label>
+
+            <label
+              htmlFor="receipt-file-input"
+              className="w-full sm:w-auto cursor-pointer inline-flex items-center justify-center gap-2 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold rounded-xl border border-slate-200 transition active:scale-95"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Photo Library / Files</span>
+            </label>
           </div>
         </div>
       )}

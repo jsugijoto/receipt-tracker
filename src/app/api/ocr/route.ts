@@ -45,7 +45,7 @@ Analyze this receipt image and extract:
 6. An itemized list of all purchased products/services with description, quantity, unit price, total price, and item category.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: [
         {
           role: 'user',
