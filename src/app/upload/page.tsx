@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import imageCompression from 'browser-image-compression';
 import { createClient } from '@/lib/supabase/client';
@@ -20,6 +20,7 @@ import {
   DollarSign,
   Tag,
   FileText,
+  Clipboard,
 } from 'lucide-react';
 
 export default function UploadPage() {
@@ -41,11 +42,8 @@ export default function UploadPage() {
   const [parsedData, setParsedData] = useState<OCRParsedResult | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Handle file selection (from camera or file picker)
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // Core file processor (handles compression, preview, and OCR trigger)
+  const processFile = async (file: File) => {
     setErrorMessage(null);
     setParsedData(null);
     setOriginalSize(file.size);
@@ -85,6 +83,62 @@ export default function UploadPage() {
       console.error(err);
       setErrorMessage('Failed to process file: ' + err.message);
       setProcessingStage(null);
+    }
+  };
+
+  // Handle file selection from input
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await processFile(file);
+    }
+  };
+
+  // Global Clipboard Paste Listener (⌘V / Ctrl+V anywhere on the page)
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      // Don't intercept if user is typing in an input field or text area
+      const activeElement = document.activeElement;
+      const isInput =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement?.getAttribute('contenteditable') === 'true';
+
+      if (isInput) return;
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.startsWith('image/')) {
+          const blob = item.getAsFile();
+          if (blob) {
+            e.preventDefault();
+            const pastedFile = new File([blob], `pasted_receipt_${Date.now()}.png`, {
+              type: blob.type,
+            });
+            await processFile(pastedFile);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
+
+  // Drag and Drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      await processFile(file);
     }
   };
 
@@ -295,9 +349,13 @@ export default function UploadPage() {
         className="sr-only"
       />
 
-      {/* Upload / Camera Box */}
+      {/* Upload / Camera Box with Drag & Drop and Paste Support */}
       {!parsedData && !processingStage && (
-        <div className="p-6 sm:p-12 bg-white rounded-3xl border-2 border-dashed border-slate-300 text-center shadow-sm">
+        <div
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          className="p-6 sm:p-12 bg-white rounded-3xl border-2 border-dashed border-slate-300 hover:border-emerald-400 text-center shadow-sm transition"
+        >
           <label
             htmlFor="receipt-file-input"
             className="cursor-pointer block group"
@@ -328,6 +386,22 @@ export default function UploadPage() {
               <Upload className="w-4 h-4" />
               <span>Photo Library / PDF</span>
             </label>
+          </div>
+
+          {/* Paste Screenshot Shortcut Hint */}
+          <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-400">
+            <Clipboard className="w-3.5 h-3.5" />
+            <span>
+              Tip: Press{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600 font-mono text-[11px]">
+                ⌘V
+              </kbd>{' '}
+              /{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600 font-mono text-[11px]">
+                Ctrl+V
+              </kbd>{' '}
+              to paste screenshots directly, or drag & drop files here
+            </span>
           </div>
         </div>
       )}
