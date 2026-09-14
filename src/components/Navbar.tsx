@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Receipt, Camera, LogOut, LayoutDashboard, User, BarChart2 } from 'lucide-react';
+import { Receipt, Camera, LogOut, LayoutDashboard, User, BarChart2, ShoppingBag } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 export default function Navbar() {
@@ -70,6 +70,18 @@ export default function Navbar() {
           >
             <BarChart2 className="w-4 h-4" />
             <span className="hidden sm:inline">Analytics</span>
+          </Link>
+
+          <Link
+            href="/purchases"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+              pathname === '/purchases'
+                ? 'bg-slate-100 text-slate-900'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <ShoppingBag className="w-4 h-4" />
+            <span className="hidden sm:inline">Purchases</span>
           </Link>
 
           <Link
