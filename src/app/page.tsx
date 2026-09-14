@@ -16,6 +16,9 @@ import {
   Filter,
   Loader2,
   Calendar,
+  Sparkles,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -27,6 +30,8 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [activeReceipt, setActiveReceipt] = useState<Receipt | null>(null);
+  const [isBatchDecoding, setIsBatchDecoding] = useState(false);
+  const [batchDecodeMessage, setBatchDecodeMessage] = useState<string | null>(null);
 
   // Fetch receipts for authenticated user
   const fetchReceipts = async () => {
@@ -98,6 +103,38 @@ export default function DashboardPage() {
     setReceipts((prev) => prev.filter((r) => r.id !== deletedId));
   };
 
+  // Count receipts that haven't been AI-decoded yet
+  const undecoded = receipts.filter((r) => !r.raw_ocr_json?.ai_decoded);
+
+  const handleBatchDecode = async () => {
+    if (isBatchDecoding) return;
+    setIsBatchDecoding(true);
+    setBatchDecodeMessage(null);
+    try {
+      const res = await fetch('/api/ai/batch-decode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 50 }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || 'Batch decode failed');
+
+      if (json.processedCount === 0) {
+        setBatchDecodeMessage('✅ All receipts are already decoded!');
+      } else {
+        setBatchDecodeMessage(
+          `✅ Done! Decoded ${json.processedCount} receipt${json.processedCount > 1 ? 's' : ''} (${json.totalItemsUpdated} items clarified).`
+        );
+        // Refresh receipts to pick up the updated raw_ocr_json
+        await fetchReceipts();
+      }
+    } catch (err: any) {
+      setBatchDecodeMessage(`❌ Error: ${err.message}`);
+    } finally {
+      setIsBatchDecoding(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-16">
       {/* Top Banner & Quick Action */}
@@ -117,6 +154,67 @@ export default function DashboardPage() {
           <span>Snap Receipt</span>
         </Link>
       </div>
+
+      {/* AI Retroactive Upgrade Banner */}
+      {!loading && undecoded.length > 0 && !batchDecodeMessage && (
+        <div className="p-4 bg-gradient-to-r from-purple-50 via-indigo-50/50 to-slate-50 border border-purple-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-purple-900">
+                ✨ AI Item Decoder Available
+              </p>
+              <p className="text-xs text-slate-600 mt-0.5">
+                {undecoded.length} receipt{undecoded.length > 1 ? 's' : ''} haven&apos;t been
+                decoded yet. Clarify cryptic register codes (e.g. &quot;KS ORG EVOO 2L&quot;)
+                into plain English for all past receipts at once.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleBatchDecode}
+            disabled={isBatchDecoding}
+            className="flex-shrink-0 self-stretch sm:self-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-xs font-bold rounded-xl shadow-sm transition"
+          >
+            {isBatchDecoding ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Decoding all...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Decode All Past Receipts</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Result / Dismissable feedback message */}
+      {batchDecodeMessage && (
+        <div
+          className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-sm font-medium shadow-xs ${
+            batchDecodeMessage.startsWith('❌')
+              ? 'bg-rose-50 border-rose-200 text-rose-800'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+            <span>{batchDecodeMessage}</span>
+          </div>
+          <button
+            onClick={() => setBatchDecodeMessage(null)}
+            className="text-slate-400 hover:text-slate-600 flex-shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
