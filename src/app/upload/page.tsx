@@ -43,11 +43,14 @@ export default function UploadPage() {
   const [parsedData, setParsedData] = useState<OCRParsedResult | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
+  const [isClarifyingItems, setIsClarifyingItems] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
 
   // Core file processor (handles compression, preview, and OCR trigger)
   const processFile = async (file: File) => {
     setErrorMessage(null);
     setParsedData(null);
+    setAiSummary(null);
     setOriginalSize(file.size);
 
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
@@ -178,10 +181,64 @@ export default function UploadPage() {
       }
 
       setParsedData(result.data);
+      if (result.data?.summary) {
+        setAiSummary(result.data.summary);
+      }
       setProcessingStage(null);
     } catch (err: any) {
       setErrorMessage(err.message || 'OCR processing failed.');
       setProcessingStage(null);
+    }
+  };
+
+  // Run AI item decoding to expand cryptic register descriptions
+  const handleClarifyItems = async () => {
+    if (!parsedData || !parsedData.items || parsedData.items.length === 0) return;
+    setIsClarifyingItems(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/ai/decode-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vendor_name: parsedData.vendor_name,
+          category: parsedData.category,
+          items: parsedData.items.map((it) => ({
+            item_description: it.item_description,
+            quantity: it.quantity,
+            total_price: it.total_price,
+            category: it.category,
+          })),
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to clarify items');
+      }
+
+      const decoded = json.data;
+      if (Array.isArray(decoded.decoded_items)) {
+        const updated = parsedData.items.map((it, idx) => {
+          const dec = decoded.decoded_items[idx];
+          return {
+            ...it,
+            item_description: dec?.clarified_name || it.item_description,
+            category: dec?.sub_category || it.category,
+          };
+        });
+
+        setParsedData({
+          ...parsedData,
+          items: updated,
+          notes: parsedData.notes || decoded.summary,
+        });
+        setAiSummary(decoded.summary);
+      }
+    } catch (err: any) {
+      setErrorMessage('AI item clarification failed: ' + err.message);
+    } finally {
+      setIsClarifyingItems(false);
     }
   };
 
@@ -628,19 +685,47 @@ export default function UploadPage() {
 
           {/* Line Items Table & Editor */}
           <div className="p-6 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
               <h3 className="font-bold text-slate-900 text-sm">
                 Itemized Lines ({parsedData.items.length})
               </h3>
-              <button
-                type="button"
-                onClick={addItem}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200 transition"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Item
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleClarifyItems}
+                  disabled={isClarifyingItems || parsedData.items.length === 0}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-purple-700 hover:text-purple-800 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded-lg border border-purple-200 transition disabled:opacity-50"
+                  title="Expand cryptic abbreviations into clear product names"
+                >
+                  {isClarifyingItems ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  )}
+                  <span>{isClarifyingItems ? 'Clarifying...' : '✨ AI Clarify Names'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={addItem}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200 transition"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Item
+                </button>
+              </div>
             </div>
+
+            {aiSummary && (
+              <div className="p-3.5 bg-gradient-to-br from-purple-50 via-indigo-50/40 to-slate-50 border border-purple-200/80 rounded-xl flex items-start gap-2.5 text-xs text-purple-950 shadow-2xs">
+                <Sparkles className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-purple-900 uppercase tracking-wider text-[10px] block">
+                    AI Purchase Summary
+                  </span>
+                  <p className="mt-0.5 text-slate-700 leading-relaxed">{aiSummary}</p>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               {parsedData.items.map((item, index) => (

@@ -1,5 +1,5 @@
 import { Receipt } from '@/lib/types';
-import { Calendar, ChevronRight, ShoppingBag } from 'lucide-react';
+import { Calendar, ChevronRight, ShoppingBag, Sparkles } from 'lucide-react';
 
 interface Props {
   receipt: Receipt;
@@ -9,6 +9,12 @@ interface Props {
 export default function ReceiptCard({ receipt, onClick }: Props) {
   const formattedDate = receipt.transaction_date;
   const formattedTotal = Number(receipt.total_amount).toFixed(2);
+  const aiSummary =
+    receipt.raw_ocr_json?.ai_decoded?.summary ||
+    receipt.raw_ocr_json?.summary ||
+    (receipt.notes?.includes('[AI Decoded]:')
+      ? receipt.notes.split('[AI Decoded]:')[1]?.trim()
+      : null);
 
   // Dynamic category badge colors
   const getBadgeStyle = (category: string) => {
@@ -55,6 +61,12 @@ export default function ReceiptCard({ receipt, onClick }: Props) {
               {receipt.category}
             </span>
           </div>
+          {aiSummary && (
+            <p className="text-[11px] text-slate-500 truncate mt-1 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-purple-500 flex-shrink-0" />
+              <span className="truncate">{aiSummary}</span>
+            </p>
+          )}
         </div>
       </div>
 

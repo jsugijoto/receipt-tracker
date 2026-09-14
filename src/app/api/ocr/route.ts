@@ -46,7 +46,11 @@ Analyze this receipt or invoice document (image or PDF) and extract:
    - If not explicitly labeled, but the Total Amount is greater than the sum of the line items, calculate tax_amount as: Total Amount minus Items Subtotal.
    - If zero tax was charged, return 0.00.
 5. The overarching primary spending category: "Groceries", "Dining", "Electronics", "Transportation", "Utilities", "Home & Hardware", "Healthcare", "Entertainment", or "Other".
-6. An itemized list of all purchased products/services with description, quantity, unit price, total price, and item category.`;
+6. An itemized list of all purchased products/services:
+   - item_description: A clear, human-readable product name. If the receipt prints cryptic register abbreviations, POS codes, or SKUs (e.g. 'KS ORG EVOO 2L', 'AVO HASS 4CT', 'CHK BRST BNLS', 'XYZ 123', 'BANANA 4011'), expand them into plain English (e.g. 'Kirkland Organic Extra Virgin Olive Oil 2L', 'Hass Avocados (4-pack)', 'Boneless Skinless Chicken Breast', 'Yellow Bananas'). If an item is an opaque SKU or code like 'XYZ 123', deduce what it represents from context or label it cleanly (e.g. 'Store SKU Item #123').
+   - raw_description: The exact literal characters printed on the receipt line.
+   - quantity, unit price, total price, and specific item category.
+7. A concise 1-2 sentence overall summary of what was purchased (e.g. "Purchased pantry cooking essentials and fresh organic produce at Costco.").`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.6-flash',
@@ -74,13 +78,15 @@ Analyze this receipt or invoice document (image or PDF) and extract:
             total_amount: { type: Type.NUMBER },
             tax_amount: { type: Type.NUMBER, description: 'Sales tax, GST/HST, VAT, or calculated tax' },
             category: { type: Type.STRING },
+            summary: { type: Type.STRING, description: '1-2 sentence human-readable summary of what was bought' },
             notes: { type: Type.STRING },
             items: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  item_description: { type: Type.STRING },
+                  item_description: { type: Type.STRING, description: 'Decoded, human-readable product name' },
+                  raw_description: { type: Type.STRING, description: 'Exact raw text on receipt' },
                   quantity: { type: Type.NUMBER },
                   unit_price: { type: Type.NUMBER },
                   total_price: { type: Type.NUMBER },
@@ -114,6 +120,10 @@ Analyze this receipt or invoice document (image or PDF) and extract:
       }
     } else {
       parsedData.tax_amount = Number(Number(parsedData.tax_amount).toFixed(2));
+    }
+
+    if (!parsedData.notes && parsedData.summary) {
+      parsedData.notes = parsedData.summary;
     }
 
     return NextResponse.json({

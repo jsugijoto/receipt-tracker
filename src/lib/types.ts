@@ -39,3 +39,17 @@ export interface OCRParsedResult {
     category?: string;
   }[];
 }
+
+export interface DecodedItem {
+  original_description: string;
+  clarified_name: string;
+  explanation?: string;
+  sub_category?: string;
+  confidence?: 'high' | 'medium' | 'low';
+}
+
+export interface DecodedReceiptAI {
+  summary: string;
+  key_highlights?: string[];
+  decoded_items: DecodedItem[];
+}

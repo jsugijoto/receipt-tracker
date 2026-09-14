@@ -41,6 +41,8 @@ import {
   RotateCcw,
   PieChart as PieChartIcon,
   Percent,
+  Layers,
+  ArrowUpDown,
 } from 'lucide-react';
 
 const CATEGORY_COLORS = [
@@ -64,7 +66,6 @@ function formatDateDisplay(dStr: string): string {
 }
 
 function formatMonthLabel(ym: string): string {
-  // ym: "2026-09"
   const parts = ym.split('-');
   if (parts.length !== 2) return ym;
   const d = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
@@ -97,6 +98,7 @@ type DatePreset =
   | 'custom';
 
 type ChartViewMode = 'spend' | 'volume' | 'cumulative';
+type SortOrder = 'newest' | 'oldest' | 'highest' | 'lowest';
 
 export default function AnalyticsPage() {
   const router = useRouter();
@@ -118,6 +120,7 @@ export default function AnalyticsPage() {
   const [minAmount, setMinAmount] = useState<string>('');
   const [maxAmount, setMaxAmount] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
+  const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
 
   // View state
   const [chartView, setChartView] = useState<ChartViewMode>('spend');
@@ -218,6 +221,24 @@ export default function AnalyticsPage() {
     return Array.from(set).sort();
   }, [receipts]);
 
+  // Overall spending per category in current date range (for category pills display)
+  const categorySummaryInDateRange = useMemo(() => {
+    const map: Record<string, { spend: number; count: number }> = {};
+    let totalInRange = 0;
+
+    receipts.forEach((r) => {
+      if (r.transaction_date < dateFrom || r.transaction_date > dateTo) return;
+      const cat = (r.category || 'General').trim();
+      const amt = Number(r.total_amount || 0);
+      totalInRange += amt;
+      if (!map[cat]) map[cat] = { spend: 0, count: 0 };
+      map[cat].spend += amt;
+      map[cat].count += 1;
+    });
+
+    return { map, totalInRange };
+  }, [receipts, dateFrom, dateTo]);
+
   // Active filters count
   const activeFiltersCount = useMemo(() => {
     let count = 0;
@@ -245,7 +266,7 @@ export default function AnalyticsPage() {
     const maxVal = maxAmount !== '' ? parseFloat(maxAmount) : null;
     const query = searchQuery.trim().toLowerCase();
 
-    return receipts.filter((r) => {
+    const result = receipts.filter((r) => {
       // Date filter
       if (r.transaction_date < dateFrom || r.transaction_date > dateTo) {
         return false;
@@ -281,7 +302,16 @@ export default function AnalyticsPage() {
       }
       return true;
     });
-  }, [receipts, dateFrom, dateTo, selectedCategory, selectedVendor, selectedTag, minAmount, maxAmount, searchQuery]);
+
+    // Sorting
+    return [...result].sort((a, b) => {
+      if (sortOrder === 'newest') return b.transaction_date.localeCompare(a.transaction_date);
+      if (sortOrder === 'oldest') return a.transaction_date.localeCompare(b.transaction_date);
+      if (sortOrder === 'highest') return Number(b.total_amount || 0) - Number(a.total_amount || 0);
+      if (sortOrder === 'lowest') return Number(a.total_amount || 0) - Number(b.total_amount || 0);
+      return 0;
+    });
+  }, [receipts, dateFrom, dateTo, selectedCategory, selectedVendor, selectedTag, minAmount, maxAmount, searchQuery, sortOrder]);
 
   // Overall KPI Statistics
   const stats = useMemo(() => {
@@ -316,12 +346,11 @@ export default function AnalyticsPage() {
 
   // Monthly Analytics calculation (Aggregated across all months or filtered range)
   const monthlyData = useMemo(() => {
-    // Collect all unique months in filtered receipts
     const map: Record<
       string,
       {
-        monthKey: string; // "2026-09"
-        label: string; // "Sep 2026"
+        monthKey: string;
+        label: string;
         spend: number;
         tax: number;
         count: number;
@@ -348,7 +377,6 @@ export default function AnalyticsPage() {
 
     const sorted = Object.values(map).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
 
-    // Calculate cumulative spend and MoM changes
     let runningCumulative = 0;
     return sorted.map((item, idx) => {
       runningCumulative += item.spend;
@@ -479,7 +507,8 @@ export default function AnalyticsPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `receipts_analytics_${dateFrom}_to_${dateTo}.csv`);
+    const catLabel = selectedCategory !== 'ALL' ? `_${selectedCategory.toLowerCase()}` : '';
+    link.setAttribute('download', `receipts_analytics${catLabel}_${dateFrom}_to_${dateTo}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -506,12 +535,12 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="space-y-6 pb-20 max-w-6xl mx-auto">
+    <div className="space-y-4 sm:space-y-6 pb-24 px-3 sm:px-4 md:px-6 max-w-6xl mx-auto">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <BarChart3 className="w-6 h-6 text-emerald-600" />
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 flex-shrink-0" />
             Financial & Spending Analytics
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -520,17 +549,17 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Top actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition ${
+            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition ${
               showFilters || activeFiltersCount > 0
-                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm'
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 shadow-xs'
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Filters</span>
+            <span>More Filters</span>
             {activeFiltersCount > 0 && (
               <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] flex items-center justify-center">
                 {activeFiltersCount}
@@ -541,7 +570,7 @@ export default function AnalyticsPage() {
           <button
             onClick={handleExportCSV}
             disabled={filteredReceipts.length === 0}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-xs"
             title="Download CSV export of currently filtered data"
           >
             <Download className="w-3.5 h-3.5" />
@@ -551,10 +580,10 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Date Range Selector Box */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3.5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+      <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-5 shadow-sm space-y-3 sm:space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5 sm:pb-3">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0">
               <CalendarDays className="w-4 h-4" />
             </div>
             <div>
@@ -566,29 +595,31 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Month Stepper */}
-          <div className="flex items-center gap-1.5 self-start sm:self-auto">
+          <div className="flex items-center gap-1.5 self-start sm:self-auto w-full sm:w-auto justify-between sm:justify-start pt-1 sm:pt-0">
             <button
               onClick={() => stepMonth(-1)}
-              className="p-1.5 text-slate-600 hover:text-emerald-700 hover:bg-slate-100 rounded-lg border border-slate-200 transition text-xs flex items-center gap-1"
+              className="flex-1 sm:flex-initial px-2.5 py-1.5 text-slate-600 hover:text-emerald-700 hover:bg-slate-100 rounded-lg border border-slate-200 transition text-xs flex items-center justify-center gap-1"
               title="Previous Month"
             >
               <ChevronLeft className="w-4 h-4" />
-              <span className="text-[11px] pr-1">Prev Month</span>
+              <span className="text-[11px]">Prev Month</span>
             </button>
             <button
               onClick={() => stepMonth(1)}
-              className="p-1.5 text-slate-600 hover:text-emerald-700 hover:bg-slate-100 rounded-lg border border-slate-200 transition text-xs flex items-center gap-1"
+              className="flex-1 sm:flex-initial px-2.5 py-1.5 text-slate-600 hover:text-emerald-700 hover:bg-slate-100 rounded-lg border border-slate-200 transition text-xs flex items-center justify-center gap-1"
               title="Next Month"
             >
-              <span className="text-[11px] pl-1">Next Month</span>
+              <span className="text-[11px]">Next Month</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Quick Presets */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-semibold text-slate-400 mr-1 uppercase">Presets:</span>
+        {/* Quick Presets - smooth horizontal scroll on mobile */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none -mx-1 px-1">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-slate-400 mr-1 uppercase flex-shrink-0">
+            Presets:
+          </span>
           {[
             { id: 'thisMonth', label: 'This Month' },
             { id: 'lastMonth', label: 'Last Month' },
@@ -654,6 +685,106 @@ export default function AnalyticsPage() {
           </div>
         </div>
       </div>
+
+      {/* PROMINENT CATEGORY FILTER PILLS BAR */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              Filter by Category
+            </span>
+          </div>
+          {selectedCategory !== 'ALL' && (
+            <button
+              onClick={() => setSelectedCategory('ALL')}
+              className="text-xs text-rose-600 hover:text-rose-700 font-medium flex items-center gap-1 hover:underline"
+            >
+              <X className="w-3 h-3" /> Clear filter
+            </button>
+          )}
+        </div>
+
+        {/* Horizontal Category Chips with edge-to-edge mobile scroll */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none -mx-3.5 px-3.5 sm:mx-0 sm:px-0 pt-0.5">
+          <button
+            onClick={() => setSelectedCategory('ALL')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition whitespace-nowrap flex items-center gap-1.5 flex-shrink-0 min-h-[36px] ${
+              selectedCategory === 'ALL'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            <span>All Categories</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                selectedCategory === 'ALL' ? 'bg-slate-800 text-emerald-300' : 'bg-slate-200 text-slate-600'
+              }`}
+            >
+              {fmt(categorySummaryInDateRange.totalInRange)}
+            </span>
+          </button>
+
+          {availableCategories.map((cat) => {
+            const data = categorySummaryInDateRange.map[cat] || { spend: 0, count: 0 };
+            const isSelected = selectedCategory.toLowerCase() === cat.toLowerCase();
+            return (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(isSelected ? 'ALL' : cat)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition whitespace-nowrap flex items-center gap-1.5 flex-shrink-0 min-h-[36px] ${
+                  isSelected
+                    ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-600/30'
+                    : 'bg-slate-50 border border-slate-200 text-slate-700 hover:bg-emerald-50 hover:border-emerald-200'
+                }`}
+              >
+                <span>{cat}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                    isSelected ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {fmt(data.spend)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* CATEGORY FOCUS BANNER */}
+      {selectedCategory !== 'ALL' && (
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-3.5 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 shadow-xs animate-in fade-in duration-200">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shadow-sm flex-shrink-0">
+              <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
+                  Category Selected
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-200/80 text-emerald-900 border border-emerald-300/50">
+                  {selectedCategory}
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-700 mt-1">
+                You spent <span className="font-bold text-slate-900">{fmt(stats.total)}</span> across{' '}
+                <span className="font-bold text-slate-900">{stats.count} receipt{stats.count !== 1 ? 's' : ''}</span> in{' '}
+                <span className="font-semibold text-emerald-900">{selectedCategory}</span> for this date period.
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setSelectedCategory('ALL')}
+            className="self-stretch sm:self-auto px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:text-rose-600 transition flex items-center justify-center gap-1.5 shadow-xs"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Show All Categories</span>
+          </button>
+        </div>
+      )}
 
       {/* Expandable Multi-Filter Panel */}
       {showFilters && (
@@ -809,81 +940,82 @@ export default function AnalyticsPage() {
       )}
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
+        <div className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-              <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Total Spent
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+              <DollarSign className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" /> Total Spent
             </span>
-            <span className="text-[10px] font-semibold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">
-              {stats.count} receipts
+            <span className="text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded-full">
+              {stats.count} rcpts
             </span>
           </div>
-          <p className="text-2xl sm:text-3xl font-bold text-emerald-600 mt-2">{fmt(stats.total)}</p>
-          <p className="text-[11px] text-slate-400 mt-1">Avg {fmt(stats.dailyAvg)} / day</p>
+          <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-emerald-600 mt-1.5 sm:mt-2 truncate">{fmt(stats.total)}</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 sm:mt-1 truncate">Avg {fmt(stats.dailyAvg)} / day</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+        <div className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-              <TrendingUp className="w-3.5 h-3.5 text-blue-600" /> Average Ticket
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+              <TrendingUp className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" /> Avg Ticket
             </span>
-            <span className="text-[10px] font-semibold px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full">
-              Per receipt
+            <span className="text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded-full">
+              Average
             </span>
           </div>
-          <p className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2">{fmt(stats.avg)}</p>
-          <p className="text-[11px] text-slate-400 mt-1">
-            {stats.count > 0 ? `Across ${stats.count} purchases` : 'No transactions'}
+          <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 mt-1.5 sm:mt-2 truncate">{fmt(stats.avg)}</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 sm:mt-1 truncate">
+            {stats.count > 0 ? `${stats.count} purchases` : 'No purchases'}
           </p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+        <div className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-              <Percent className="w-3.5 h-3.5 text-amber-600" /> Sales Tax Paid
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+              <Percent className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" /> Tax Paid
             </span>
-            <span className="text-[10px] font-semibold px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full">
-              {stats.effectiveTaxRate.toFixed(1)}% rate
+            <span className="text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded-full">
+              {stats.effectiveTaxRate.toFixed(1)}%
             </span>
           </div>
-          <p className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2">{fmt(stats.totalTax)}</p>
-          <p className="text-[11px] text-slate-400 mt-1">Total recorded tax liability</p>
+          <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 mt-1.5 sm:mt-2 truncate">{fmt(stats.totalTax)}</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 sm:mt-1 truncate">Tax liability</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+        <div className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-              <Store className="w-3.5 h-3.5 text-purple-600" /> Largest Expense
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+              <Store className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" /> Largest Spend
             </span>
             {stats.biggest && (
-              <span className="text-[10px] font-semibold px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full truncate max-w-[90px]">
+              <span className="text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded-full truncate max-w-[70px] sm:max-w-[90px]">
                 {stats.biggest.vendor_name}
               </span>
             )}
           </div>
-          <p className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2">
+          <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 mt-1.5 sm:mt-2 truncate">
             {stats.biggest ? fmt(Number(stats.biggest.total_amount)) : '$0.00'}
           </p>
-          <p className="text-[11px] text-slate-400 mt-1 truncate">
+          <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 sm:mt-1 truncate">
             {stats.biggest ? `${stats.biggest.vendor_name} (${stats.biggest.transaction_date})` : 'None recorded'}
           </p>
         </div>
       </div>
 
       {filteredReceipts.length === 0 ? (
-        <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200 p-8">
-          <ReceiptText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+        <div className="py-16 sm:py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200 p-6 sm:p-8">
+          <ReceiptText className="w-10 h-10 sm:w-12 sm:h-12 text-slate-300 mx-auto mb-3" />
           <h3 className="font-bold text-slate-800 text-base">No Receipts Match This Filter</h3>
           <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-            We couldn't find any receipts within the selected date range ({dateFrom} to {dateTo}) and active filters.
+            We couldn't find any receipts for {selectedCategory !== 'ALL' ? `category "${selectedCategory}"` : 'this filter'}{' '}
+            within {dateFrom} to {dateTo}.
           </p>
           <div className="mt-5 flex items-center justify-center gap-3">
             <button
               onClick={resetAllFilters}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow transition"
             >
-              Reset Filters
+              Reset All Filters
             </button>
             <button
               onClick={() => handlePresetSelect('all')}
@@ -896,22 +1028,23 @@ export default function AnalyticsPage() {
       ) : (
         <>
           {/* MONTHLY ANALYTICS & TRENDS SECTION */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-5 shadow-sm space-y-3.5 sm:space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-emerald-600" /> Monthly Spending Trends & Analytics
+                <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-emerald-600 flex-shrink-0" /> Monthly Spending Trends & Analytics
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
                   Month-over-month trajectory, cumulative volume, and seasonal patterns
+                  {selectedCategory !== 'ALL' ? ` for "${selectedCategory}"` : ''}
                 </p>
               </div>
 
-              {/* Toggle Chart View Mode */}
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+              {/* Toggle Chart View Mode - grid on mobile, flex on desktop */}
+              <div className="grid grid-cols-3 sm:flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-full sm:w-auto text-center">
                 <button
                   onClick={() => setChartView('spend')}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
+                  className={`px-2 sm:px-3 py-1.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-medium transition ${
                     chartView === 'spend' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -919,15 +1052,15 @@ export default function AnalyticsPage() {
                 </button>
                 <button
                   onClick={() => setChartView('volume')}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
+                  className={`px-2 sm:px-3 py-1.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-medium transition ${
                     chartView === 'volume' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Spend vs Volume
+                  Spend vs Vol
                 </button>
                 <button
                   onClick={() => setChartView('cumulative')}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
+                  className={`px-2 sm:px-3 py-1.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-medium transition ${
                     chartView === 'cumulative' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -937,10 +1070,10 @@ export default function AnalyticsPage() {
             </div>
 
             {/* Monthly Chart */}
-            <div className="w-full h-72 pt-2">
+            <div className="w-full h-60 sm:h-72 pt-1 sm:pt-2">
               <ResponsiveContainer width="100%" height="100%">
                 {chartView === 'cumulative' ? (
-                  <AreaChart data={monthlyData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <AreaChart data={monthlyData} margin={{ top: 10, right: 5, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorCumulative" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
@@ -1065,14 +1198,14 @@ export default function AnalyticsPage() {
               </ResponsiveContainer>
             </div>
 
-            {/* Monthly Analytics Cards / Drill-down Table */}
+            {/* Monthly Analytics Cards */}
             {monthlyData.length > 0 && (
               <div className="border-t border-slate-100 pt-4">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                     Month-over-Month Breakdown ({monthlyData.length} months)
                   </h3>
-                  <span className="text-[11px] text-slate-400">Click any month to inspect</span>
+                  <span className="text-[11px] text-slate-400">Click any month to zoom</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
@@ -1119,30 +1252,36 @@ export default function AnalyticsPage() {
           </div>
 
           {/* TWO COLUMN GRID: CATEGORY BREAKDOWN & TOP MERCHANTS */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
             {/* Category Donut & Breakdown */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+            <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-5 shadow-sm flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
                   <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <PieChartIcon className="w-4 h-4 text-emerald-600" /> Spending by Category
+                    <PieChartIcon className="w-4 h-4 text-emerald-600 flex-shrink-0" /> Spending by Category
                   </h2>
-                  <span className="text-xs text-slate-500 font-medium">{byCategory.length} categories</span>
+                  <span className="text-[11px] sm:text-xs text-slate-500 font-medium">{byCategory.length} categories</span>
                 </div>
 
                 {/* Donut Chart */}
-                <div className="w-full h-60">
+                <div className="w-full h-52 sm:h-60">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={byCategory}
                         cx="50%"
                         cy="50%"
-                        innerRadius={60}
-                        outerRadius={95}
+                        innerRadius={50}
+                        outerRadius={80}
                         paddingAngle={2}
                         dataKey="value"
                         nameKey="name"
+                        onClick={(entry: any) => {
+                          if (entry && entry.name) {
+                            setSelectedCategory(entry.name);
+                          }
+                        }}
+                        className="cursor-pointer"
                       >
                         {byCategory.map((entry, idx) => (
                           <Cell key={idx} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
@@ -1153,12 +1292,13 @@ export default function AnalyticsPage() {
                           if (active && payload && payload.length) {
                             const d = payload[0].payload;
                             return (
-                              <div className="bg-white border border-slate-200 shadow-lg rounded-xl p-3 text-xs">
+                              <div className="bg-white border border-slate-200 shadow-lg rounded-xl p-2.5 sm:p-3 text-xs">
                                 <p className="font-bold text-slate-900">{d.name}</p>
                                 <p className="text-emerald-600 font-semibold">{fmt(d.value)}</p>
                                 <p className="text-slate-500">
-                                  {d.pct}% of total ({d.count} receipts)
+                                  {d.pct}% of total ({d.count} rcpts)
                                 </p>
+                                <p className="text-[10px] text-emerald-600 mt-1 font-medium">Click to filter category</p>
                               </div>
                             );
                           }
@@ -1170,43 +1310,55 @@ export default function AnalyticsPage() {
                 </div>
               </div>
 
-              {/* Category Progress List */}
-              <div className="space-y-2.5 mt-3 pt-3 border-t border-slate-100 max-h-56 overflow-y-auto pr-1">
-                {byCategory.map((cat) => (
-                  <div key={cat.name} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="flex items-center gap-1.5 font-medium text-slate-700">
-                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: cat.color }} />
-                        <span>{cat.name}</span>
-                        <span className="text-slate-400 text-[10px]">({cat.count})</span>
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900">{fmt(cat.value)}</span>
-                        <span className="text-[10px] text-slate-400 w-7 text-right">{cat.pct}%</span>
+              {/* Category Progress List with Click-To-Filter */}
+              <div className="space-y-1.5 sm:space-y-2 mt-2 sm:mt-3 pt-3 border-t border-slate-100 max-h-56 overflow-y-auto pr-1">
+                {byCategory.map((cat) => {
+                  const isFiltered = selectedCategory.toLowerCase() === cat.name.toLowerCase();
+                  return (
+                    <div
+                      key={cat.name}
+                      onClick={() => setSelectedCategory(isFiltered ? 'ALL' : cat.name)}
+                      className={`p-2 rounded-xl transition cursor-pointer ${
+                        isFiltered
+                          ? 'bg-emerald-50 border border-emerald-300'
+                          : 'hover:bg-slate-50'
+                      }`}
+                      title={`Click to filter by ${cat.name}`}
+                    >
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="flex items-center gap-1.5 font-semibold text-slate-800 truncate max-w-[170px] sm:max-w-xs">
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: cat.color }} />
+                          <span className="truncate">{cat.name}</span>
+                          <span className="text-slate-400 text-[10px] font-normal flex-shrink-0">({cat.count})</span>
+                        </span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="font-bold text-slate-900">{fmt(cat.value)}</span>
+                          <span className="text-[10px] text-slate-500 w-7 text-right">{cat.pct}%</span>
+                        </div>
+                      </div>
+                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-300"
+                          style={{ width: `${cat.pct}%`, background: cat.color }}
+                        />
                       </div>
                     </div>
-                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-300"
-                        style={{ width: `${cat.pct}%`, background: cat.color }}
-                      />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
             {/* Top Merchants Leaderboard */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+            <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-5 shadow-sm flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
                   <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <Store className="w-4 h-4 text-emerald-600" /> Top Merchants & Stores
+                    <Store className="w-4 h-4 text-emerald-600 flex-shrink-0" /> Top Merchants & Stores
                   </h2>
-                  <span className="text-xs text-slate-500 font-medium">Ranked by spend</span>
+                  <span className="text-[11px] sm:text-xs text-slate-500 font-medium">Ranked by spend</span>
                 </div>
 
-                <div className="space-y-3 mt-2">
+                <div className="space-y-2 sm:space-y-2.5 mt-2">
                   {topVendors.length === 0 ? (
                     <p className="text-xs text-slate-400 py-10 text-center">No merchant data available</p>
                   ) : (
@@ -1217,25 +1369,25 @@ export default function AnalyticsPage() {
                           setSelectedVendor(v.vendor);
                           setShowFilters(true);
                         }}
-                        className="p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition cursor-pointer flex items-center justify-between group"
+                        className="p-2.5 sm:p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition cursor-pointer flex items-center justify-between group"
                       >
-                        <div className="flex items-center gap-3">
-                          <span className="w-6 h-6 rounded-lg bg-white border border-slate-200 font-bold text-xs text-slate-600 flex items-center justify-center">
+                        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                          <span className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg bg-white border border-slate-200 font-bold text-[10px] sm:text-xs text-slate-600 flex items-center justify-center flex-shrink-0">
                             #{i + 1}
                           </span>
-                          <div>
-                            <p className="text-xs font-bold text-slate-800 group-hover:text-emerald-700">
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-800 group-hover:text-emerald-700 truncate max-w-[120px] xs:max-w-[160px] sm:max-w-[200px]">
                               {v.vendor}
                             </p>
-                            <p className="text-[10px] text-slate-400">
+                            <p className="text-[10px] text-slate-400 truncate">
                               {v.count} visits • Avg {fmt(v.avgTicket)}
                             </p>
                           </div>
                         </div>
 
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-slate-900">{fmt(v.spend)}</p>
-                          <p className="text-[10px] text-slate-400">{v.pct}% of period</p>
+                        <div className="text-right flex-shrink-0 ml-2">
+                          <p className="text-xs sm:text-sm font-bold text-slate-900">{fmt(v.spend)}</p>
+                          <p className="text-[9px] sm:text-[10px] text-slate-400">{v.pct}% of period</p>
                         </div>
                       </div>
                     ))
@@ -1244,16 +1396,16 @@ export default function AnalyticsPage() {
               </div>
 
               {/* Day of Week Spend Pattern */}
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  Day of Week Spending Heatmap
+              <div className="mt-3.5 pt-3.5 border-t border-slate-100">
+                <p className="text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Day of Week Spending Pattern
                 </p>
                 <div className="grid grid-cols-7 gap-1 text-center">
                   {dayOfWeekData.map((d) => (
-                    <div key={d.day} className="p-2 bg-slate-50 rounded-lg">
-                      <p className="text-[10px] font-bold text-slate-500">{d.day}</p>
-                      <p className="text-xs font-semibold text-slate-900 mt-1">{fmt(d.spend)}</p>
-                      <p className="text-[9px] text-slate-400 mt-0.5">{d.count} rcpts</p>
+                    <div key={d.day} className="p-1 sm:p-2 bg-slate-50 rounded-lg min-h-[50px] flex flex-col justify-between">
+                      <p className="text-[9px] sm:text-[10px] font-bold text-slate-500">{d.day}</p>
+                      <p className="text-[10px] sm:text-xs font-semibold text-slate-900 mt-0.5 sm:mt-1 truncate">{fmt(d.spend)}</p>
+                      <p className="text-[8px] sm:text-[9px] text-slate-400 mt-0.5 truncate">{d.count} rcpts</p>
                     </div>
                   ))}
                 </div>
@@ -1261,21 +1413,21 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          {/* SECONDARY ROW: TAGS BREAKDOWN & RECENT FILTERED RECEIPTS */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* SECONDARY ROW: TAGS BREAKDOWN & COMPLETE FILTERED RECEIPTS LIST */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
             {/* Custom Tag Breakdown */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm lg:col-span-1">
-              <h2 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
-                <Tag className="w-4 h-4 text-emerald-600" /> Spending by Custom Tag
+            <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-5 shadow-sm lg:col-span-1">
+              <h2 className="text-sm font-bold text-slate-900 mb-2 sm:mb-3 flex items-center gap-2">
+                <Tag className="w-4 h-4 text-emerald-600 flex-shrink-0" /> Spending by Custom Tag
               </h2>
               {byTag.length === 0 ? (
-                <div className="py-12 text-center text-slate-400">
-                  <Tag className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <div className="py-10 text-center text-slate-400">
+                  <Tag className="w-7 h-7 sm:w-8 sm:h-8 text-slate-300 mx-auto mb-2" />
                   <p className="text-xs">No receipts with tags in this selection</p>
                   <p className="text-[10px] text-slate-400 mt-0.5">Tag receipts with #business, #dining, etc.</p>
                 </div>
               ) : (
-                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
                   {byTag.map(({ tag, amount, count, pct }) => (
                     <div
                       key={tag}
@@ -1286,12 +1438,12 @@ export default function AnalyticsPage() {
                       className="p-2.5 rounded-xl bg-slate-50 hover:bg-emerald-50/50 cursor-pointer transition"
                     >
                       <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="font-semibold text-slate-800 flex items-center gap-1">
+                        <span className="font-semibold text-slate-800 flex items-center gap-1 truncate max-w-[160px]">
                           <span className="text-emerald-600">#</span>
-                          {tag}
-                          <span className="text-[10px] text-slate-400 font-normal">({count})</span>
+                          <span className="truncate">{tag}</span>
+                          <span className="text-[10px] text-slate-400 font-normal flex-shrink-0">({count})</span>
                         </span>
-                        <span className="font-bold text-slate-900">{fmt(amount)}</span>
+                        <span className="font-bold text-slate-900 flex-shrink-0">{fmt(amount)}</span>
                       </div>
                       <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
                         <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
@@ -1302,48 +1454,101 @@ export default function AnalyticsPage() {
               )}
             </div>
 
-            {/* Filtered Receipts Inspector / Top Transactions */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm lg:col-span-2">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <ReceiptText className="w-4 h-4 text-emerald-600" /> Transactions in Period ({filteredReceipts.length})
-                </h2>
-                <span className="text-xs text-slate-400">Click to view or edit</span>
-              </div>
+            {/* Complete Filtered Receipts Listing (Dedicated Category View) */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-5 shadow-sm lg:col-span-2 flex flex-col justify-between">
+              <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <ReceiptText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                      {selectedCategory !== 'ALL'
+                        ? `Receipts in "${selectedCategory}" (${filteredReceipts.length})`
+                        : `All Receipts in Period (${filteredReceipts.length})`}
+                    </h2>
+                    <p className="text-[10px] sm:text-[11px] text-slate-400">
+                      Totaling <span className="font-semibold text-emerald-600">{fmt(stats.total)}</span> • Click any receipt to inspect
+                    </p>
+                  </div>
 
-              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                {filteredReceipts.slice(0, 15).map((r) => (
-                  <div
-                    key={r.id}
-                    onClick={() => setActiveReceipt(r)}
-                    className="p-3 rounded-xl border border-slate-100 hover:border-emerald-200 hover:bg-slate-50 cursor-pointer transition flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs">
-                        {r.vendor_name ? r.vendor_name.charAt(0).toUpperCase() : 'R'}
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-slate-900">{r.vendor_name}</p>
-                        <p className="text-[10px] text-slate-400">
-                          {r.transaction_date} • {r.category || 'General'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-xs font-bold text-slate-900">{fmt(Number(r.total_amount))}</p>
-                      {r.tax_amount ? (
-                        <p className="text-[10px] text-slate-400">Tax: {fmt(Number(r.tax_amount))}</p>
-                      ) : null}
+                  {/* Sort Order Selector */}
+                  <div className="flex items-center justify-between sm:justify-start gap-1.5 w-full sm:w-auto self-start sm:self-auto">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase sm:hidden">Sort:</span>
+                    <div className="flex items-center gap-1.5">
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      <select
+                        value={sortOrder}
+                        onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+                        className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 outline-none focus:ring-1 focus:ring-emerald-500"
+                      >
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="highest">Highest Amount</option>
+                        <option value="lowest">Lowest Amount</option>
+                      </select>
                     </div>
                   </div>
-                ))}
-                {filteredReceipts.length > 15 && (
-                  <p className="text-center text-[11px] text-slate-400 pt-2">
-                    Showing top 15 of {filteredReceipts.length} receipts • Use CSV export for full data
-                  </p>
-                )}
+                </div>
+
+                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {filteredReceipts.map((r) => (
+                    <div
+                      key={r.id}
+                      onClick={() => setActiveReceipt(r)}
+                      className="p-2.5 sm:p-3 rounded-xl border border-slate-100 hover:border-emerald-300 hover:bg-emerald-50/30 cursor-pointer transition flex items-center justify-between group"
+                    >
+                      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs flex-shrink-0 group-hover:bg-emerald-600 group-hover:text-white transition">
+                          {r.vendor_name ? r.vendor_name.charAt(0).toUpperCase() : 'R'}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-emerald-700 transition truncate max-w-[130px] xs:max-w-[180px] sm:max-w-xs">
+                            {r.vendor_name}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-400 mt-0.5">
+                            <span>{r.transaction_date}</span>
+                            <span>•</span>
+                            <span className="font-medium text-slate-600 truncate max-w-[90px]">{r.category || 'General'}</span>
+                            {r.tags && r.tags.length > 0 && (
+                              <>
+                                <span>•</span>
+                                <span className="text-emerald-600 truncate max-w-[80px]">#{r.tags.join(', #')}</span>
+                              </>
+                            )}
+                          </div>
+                          {r.notes && (
+                            <p className="text-[10px] sm:text-[11px] text-slate-500 line-clamp-1 mt-0.5 italic">
+                              "{r.notes}"
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-right flex-shrink-0 ml-2 sm:ml-3">
+                        <p className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-emerald-600 transition">
+                          {fmt(Number(r.total_amount))}
+                        </p>
+                        {r.tax_amount ? (
+                          <p className="text-[9px] sm:text-[10px] text-slate-400">Tax: {fmt(Number(r.tax_amount))}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
+
+              {filteredReceipts.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
+                  <span>
+                    Showing {filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? 's' : ''}
+                  </span>
+                  <button
+                    onClick={handleExportCSV}
+                    className="text-emerald-600 hover:text-emerald-700 font-semibold flex items-center gap-1 self-start sm:self-auto"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Download these receipts (CSV)
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </>
@@ -1367,3 +1572,4 @@ export default function AnalyticsPage() {
     </div>
   );
 }
+
