@@ -19,6 +19,7 @@ export interface Receipt {
   image_url?: string | null;
   raw_ocr_json?: any;
   notes?: string | null;
+  tags?: string[] | null;
   created_at: string;
   items?: ReceiptItem[];
 }

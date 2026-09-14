@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Receipt, ReceiptItem } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
+import TagInput from '@/components/TagInput';
 import {
   X,
   Calendar,
@@ -42,6 +43,7 @@ export default function ReceiptDetailModal({ receipt, onClose, onDeleted, onUpda
   const [editTotal, setEditTotal] = useState<number>(0);
   const [editTax, setEditTax] = useState<number>(0);
   const [editCategory, setEditCategory] = useState('');
+  const [editTags, setEditTags] = useState<string[]>([]);
   const [editItems, setEditItems] = useState<ReceiptItem[]>([]);
 
   // Initialize data on receipt open
@@ -54,6 +56,7 @@ export default function ReceiptDetailModal({ receipt, onClose, onDeleted, onUpda
     setEditTotal(Number(receipt.total_amount) || 0);
     setEditTax(Number(receipt.tax_amount) || 0);
     setEditCategory(receipt.category || 'General');
+    setEditTags(receipt.tags || []);
 
     // Load line items
     const fetchItems = async () => {
@@ -101,6 +104,7 @@ export default function ReceiptDetailModal({ receipt, onClose, onDeleted, onUpda
     setEditTotal(Number(receipt.total_amount) || 0);
     setEditTax(Number(receipt.tax_amount) || 0);
     setEditCategory(receipt.category || 'General');
+    setEditTags(receipt.tags || []);
     setEditItems([...items]);
     setIsEditing(true);
   };
@@ -167,6 +171,7 @@ export default function ReceiptDetailModal({ receipt, onClose, onDeleted, onUpda
           total_amount: Number(editTotal) || 0,
           tax_amount: Number(editTax) || 0,
           category: editCategory,
+          tags: editTags.length > 0 ? editTags : null,
         })
         .eq('id', receipt.id);
 
@@ -196,6 +201,7 @@ export default function ReceiptDetailModal({ receipt, onClose, onDeleted, onUpda
         total_amount: Number(editTotal) || 0,
         tax_amount: Number(editTax) || 0,
         category: editCategory,
+        tags: editTags.length > 0 ? editTags : null,
       };
 
       setItems(editItems);
@@ -453,6 +459,17 @@ export default function ReceiptDetailModal({ receipt, onClose, onDeleted, onUpda
                       <option value="General">General / Other</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                    Custom Tags
+                  </label>
+                  <TagInput
+                    tags={editTags}
+                    onChange={setEditTags}
+                    placeholder="e.g. work, reimbursable..."
+                  />
                 </div>
               </div>
 

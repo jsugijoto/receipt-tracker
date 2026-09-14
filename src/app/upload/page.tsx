@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import imageCompression from 'browser-image-compression';
 import { createClient } from '@/lib/supabase/client';
 import { OCRParsedResult } from '@/lib/types';
+import TagInput from '@/components/TagInput';
 import {
   Camera,
   Upload,
@@ -41,6 +42,7 @@ export default function UploadPage() {
   // Extracted Result (Editable by user before saving)
   const [parsedData, setParsedData] = useState<OCRParsedResult | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
 
   // Core file processor (handles compression, preview, and OCR trigger)
   const processFile = async (file: File) => {
@@ -286,6 +288,7 @@ export default function UploadPage() {
           tax_amount: Number(parsedData.tax_amount) || 0,
           category: parsedData.category || 'General',
           notes: parsedData.notes || null,
+          tags: tags.length > 0 ? tags : null,
           image_url: fileName,
           raw_ocr_json: parsedData,
         })
@@ -607,6 +610,18 @@ export default function UploadPage() {
                     <option value="General">General / Other</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                  Custom Tags
+                </label>
+                <TagInput
+                  tags={tags}
+                  onChange={setTags}
+                  placeholder="e.g. work, reimbursable, costco-run..."
+                />
+                <p className="text-[11px] text-slate-400 mt-1">Press Enter or comma to add. Used in Analytics.</p>
               </div>
             </div>
           </div>
